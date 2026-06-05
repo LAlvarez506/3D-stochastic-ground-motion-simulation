@@ -1,0 +1,8 @@
+# Core dependencies
+numpy>=1.21
+scipy>=1.7
+numba>=0.55
+
+# Optional — needed for examples and run scripts
+matplotlib>=3.4
+pandas
