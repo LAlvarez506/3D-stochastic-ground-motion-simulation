@@ -2,7 +2,7 @@
 
 Stochastic ground-motion simulator based on the Boore (2003) stochastic
 method, extended to multi-component **(P, SV, SH)** output for point-source
-and finite-fault models.
+and finite-fault models by Otarola et al (2016, 2018) and latter modified by Alvarez 2022.
 
 ---
 
