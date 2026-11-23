@@ -14,6 +14,8 @@ stochastic_gm/                  ← repository root
 ├── setup.py
 ├── requirements.txt
 ├── README.md
+├── tools/
+│   └── build_ba19_data.py               ← regenerates stochastic_gm/ba19_data.py (developer tool)
 ├── examples/                   ← usage examples
 │   ├── run_simulation_exemple.py        ← point-source simulation
 │   ├── run_finite_fault.py              ← finite-fault simulation (dict-based)
@@ -25,9 +27,13 @@ stochastic_gm/                  ← repository root
     ├── earthquake.py           ← EQ orchestrator class
     ├── point_source.py         ← PointSource spectral engine
     ├── physics.py              ← stateless numerical functions
+    ├── correlated_noise.py     ← optional interfrequency-correlated noise (Bayless & Abrahamson 2019)
+    ├── ba19_data.py            ← bundled correlation matrices and sigma coefficients (generated)
     └── verification/
         ├── __init__.py
-        └── point_source_validation.py   ← point-source verification suite
+        ├── point_source_validation.py            ← point-source verification suite
+        ├── verify_interfrequency_correlation.py  ← recovers the correlation structure of the paper
+        └── verify_noise_scaled_spectra.py        ← deterministic spectrum vs noise-scaled spectra
 ```
 
 ---
@@ -88,7 +94,7 @@ Both scripts are fully annotated and cover the complete workflow: configuring th
 A validation suite for the point-source engine is also available as a module:
 
 ```bash
-python -m stochastic_gm.examples.point_source_validation --Vp 6.0 --Vs 3.46 --depth 15 --dist 30 --Mw 6.0 --sd 50 --show
+python -m stochastic_gm.verification.point_source_validation --Vp 6.0 --Vs 3.46 --depth 15 --dist 30 --Mw 6.0 --sd 50 --show
 ```
 
 ---
@@ -220,6 +226,68 @@ subsource_list = [
 A fully annotated version of this workflow, including result plotting and sanity checks, is provided in `examples/run_finite_fault.py`.
 
 
+## Interfrequency-correlated noise (optional)
+
+By default the amplitude of the windowed white noise is random and uncorrelated between
+frequencies, so the simulated Fourier amplitude spectra have almost no interfrequency
+correlation of epsilon (the correlation of the log-amplitude residuals), unlike recorded
+motions. The package can replace that amplitude by a log-normal factor whose correlation
+and standard deviation follow Bayless & Abrahamson (2019); the noise phases are kept.
+
+```python
+from stochastic_gm import SimConfig, CorrelatedNoiseConfig
+
+sim = SimConfig(dt=0.01, n_sim=100, seed=1, ...,
+                corr_noise=CorrelatedNoiseConfig())      # defaults below
+```
+
+Leaving `corr_noise` unset (`None`) keeps the standard uncorrelated noise.
+
+| Option | Values | Meaning |
+|---|---|---|
+| `correlation_type` | `'within_site'` (default), `'total'`, `'between_site'`, `'custom'` | Which matrix of the paper. Within-site is the variability of the noise alone for a fixed scenario and site; `total` also contains between-event and between-site terms. `'custom'` takes `custom=(freqs, matrix, sigma_freqs, sigma)`. |
+| `normalization` | `'expected'` (default), `'per_realization'`, `'none'` | `expected`: ln F = sigma*eps - sigma^2, so E[F^2] = 1 (rms level of the deterministic spectrum kept on average). `per_realization`: each draw divided by the rms of its F (Boore style). `none`: ln F = sigma*eps. |
+| `apply_to` | `'horizontal'` (default), `'all'` | Horizontal components only, or the same epsilon on the vertical too. |
+| `mw` | float or `None` | Magnitude for sigma(Mw); `None` uses the earthquake's Mw. |
+| `sigma` | float or `None` | Constant ln standard deviation instead of the BA18 values. |
+
+The standard deviations (tau, phi_S2S, phi_ss and the total) are those of the BA18 EAS
+model and depend on magnitude (interpolated between M 4 and 6). The matrices cover
+0.1-24 Hz; values are held outside that band. The between-event matrix is not bundled.
+
+**Finite fault:** each sub-source currently receives its own independent epsilon, so the
+summed motion is not constrained to the target; the code warns. A post-processing
+constraint on the summed motion is planned.
+
+### Verification
+
+```bash
+python -m stochastic_gm.verification.verify_interfrequency_correlation --n-sim 2000
+python -m stochastic_gm.verification.verify_noise_scaled_spectra --n-sim 1000
+```
+
+The first simulates many realizations, computes the Konno-Ohmachi smoothed EAS and
+recovers the correlation structure (cross sections like Fig. 5 of the paper, contours,
+sigma). The second shows the deterministic spectrum, the spectrum scaled by the original
+noise and by the correlated noise, and the amplitude factor applied.
+
+Within-site correlation recovered from 2000 simulated realizations (left: with correlated
+noise; right: original noise), against the matrix of Bayless & Abrahamson (2019):
+
+![Cross sections of the within-site correlation](docs/images/fig5_style_cross_sections.png)
+
+One realization: deterministic target, original noise, correlated noise, and the amplitude
+factor applied:
+
+![Spectrum scaled by the noise](docs/images/spectra_single_realization.png)
+
+### Noise normalization
+
+The simulated Fourier amplitude spectrum has the deterministic spectrum as its rms
+level, independent of `dt` and of the record length (`scale_spectrum` divides the unit-rms
+noise spectrum by `sqrt(N) * dt`). Earlier versions scaled the amplitudes by
+`sqrt(N) * dt / 2` instead, which made the amplitudes depend on `dt`.
+
 ---
 
 ## Unit conventions
@@ -253,3 +321,10 @@ A fully annotated version of this workflow, including result plotting and sanity
   borehole and on surface for the 2011 Mw 9.0 Tohoku-Oki megathrust earthquake considering P, SV, and SH
   amplification transfer functions. *Bull. Seismol. Soc. Am.* 108(5A), 2333–2346.
   https://doi.org/10.1785/0120170342
+- Bayless J. & Abrahamson N.A. (2019). An empirical model for the interfrequency correlation of
+  epsilon for Fourier amplitude spectra. *Bull. Seismol. Soc. Am.* 109(3).
+  https://doi.org/10.1785/0120180238
+- Bayless J. & Abrahamson N.A. (2018). Evaluation of the interperiod correlation of ground-motion
+  simulations. *Bull. Seismol. Soc. Am.* 108(6), 3413–3430. https://doi.org/10.1785/0120180095
+- Bayless J. & Abrahamson N.A. (2018). An empirical model for Fourier amplitude spectra using the
+  NGA-West2 database. PEER Report 2018/07.
