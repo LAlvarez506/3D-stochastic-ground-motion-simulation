@@ -67,7 +67,7 @@ COND_COLORS = ('#1f3fd0', '#d01f1f', '#1f8a1f', '#c01fc0', 'k')
 # ---------------------------------------------------------------------------
 
 def build_scenario(n_sim, seed, corr_noise=None, Mw=6.5, dist_km=30.,
-                   depth_km=15., dt=0.01, kappa=0.04):
+                   depth_km=15., dt=0.01, kappa=0.04, ftgm=0.5):
     """Homogeneous half-space point-source scenario (edit to taste)."""
     medium = MediumConfig(Depth=np.array([0., 30.]), vs=np.array([3.46, 3.46]),
                           vp=np.array([6.0, 6.0]), Rho=np.array([2.7, 2.7]),
@@ -80,8 +80,8 @@ def build_scenario(n_sim, seed, corr_noise=None, Mw=6.5, dist_km=30.,
                       kappa=kappa)
     duration = DurationConfig(path_duration=0.05)
     sim = SimConfig(dt=dt, n_sim=n_sim, seed=seed,
-                    epsilon_s=0.2, nu_s=0.05, ftgm_s=0.5,
-                    epsilon_p=0.2, nu_p=0.05, ftgm_p=0.5,
+                    epsilon_s=0.2, nu_s=0.05, ftgm_s=ftgm,
+                    epsilon_p=0.2, nu_p=0.05, ftgm_p=ftgm,
                     corr_noise=corr_noise)
     with contextlib.redirect_stdout(io.StringIO()):
         eq = EQ(Mw=Mw, medium=medium, source=source, path=path, site_cfg=site,

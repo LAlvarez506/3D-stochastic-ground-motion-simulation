@@ -261,9 +261,13 @@ constraint on the summed motion is planned.
 
 ### Verification
 
+All tests are described in [`stochastic_gm/verification/README.md`](stochastic_gm/verification/README.md).
+
 ```bash
 python -m stochastic_gm.verification.verify_interfrequency_correlation --n-sim 2000
 python -m stochastic_gm.verification.verify_noise_scaled_spectra --n-sim 1000
+python -m stochastic_gm.verification.verify_rvt --n-sim 100
+python -m stochastic_gm.verification.verify_gmpe_ab06 --n-sim 60     # needs: pip install pygmm
 ```
 
 The first simulates many realizations, computes the Konno-Ohmachi smoothed EAS and
