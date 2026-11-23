@@ -457,5 +457,10 @@ class SimConfig:
     window_s3_dur:   Optional[float]      = None
     window_standard_time: Optional[np.ndarray] = None
 
+    # Interfrequency-correlated noise (Bayless & Abrahamson 2019).
+    # A ``CorrelatedNoiseConfig`` (see correlated_noise.py) or None (default:
+    # original uncorrelated noise, behaviour unchanged).
+    corr_noise: Optional[object] = None
+
     def __post_init__(self):
         self.freq_ps = np.asarray(self.freq_ps, dtype=float)

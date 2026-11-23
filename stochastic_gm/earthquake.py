@@ -33,6 +33,7 @@ from __future__ import annotations
 import math
 import time
 import random
+import warnings
 import multiprocessing as mp
 
 import numpy as np
@@ -57,7 +58,7 @@ def _process_one_subsource(args: tuple) -> dict:
     import math
     from stochastic_gm.physics import white_noise, FFT, scale_spectrum
 
-    ps, sim_seed, dt, standard_freqs, duration_max, _ = args
+    ps, sim_seed, dt, standard_freqs, duration_max, _, noise_corr = args
 
     Normalization = None
     n_samples     = ps['n_samples']
@@ -105,6 +106,22 @@ def _process_one_subsource(args: tuple) -> dict:
         return f_, fr
 
     # ------------------------------------------------------------------
+    # Interfrequency-correlated noise (optional).  Replaces the amplitude
+    # of the windowed-noise FFT, keeps its phase.  The same epsilon (same
+    # seed) is used for P and S.  Horizontal components always get it;
+    # vertical components only if apply_to == 'all'.
+    # ------------------------------------------------------------------
+    def _corr_h(fft_, fr_):
+        if noise_corr is None:
+            return fft_
+        return noise_corr.apply_to_noise_fft(fft_, fr_, sim_seed)
+
+    def _corr_v(fft_, fr_):
+        if noise_corr is None or noise_corr.cfg.apply_to != 'all':
+            return fft_
+        return noise_corr.apply_to_noise_fft(fft_, fr_, sim_seed)
+
+    # ------------------------------------------------------------------
     # GIT window case
     # ------------------------------------------------------------------
     if ps['window_type'] == 'GIT':
@@ -132,6 +149,11 @@ def _process_one_subsource(args: tuple) -> dict:
         fft_srms, fr_srms = _fft_std(SRMS_win)
         fft_p3,   fr_p3   = _fft_std(P3_win)
         fft_s3,   fr_s3   = _fft_std(S3_win)
+
+        fft_prms = _corr_h(fft_prms, fr_prms)
+        fft_srms = _corr_h(fft_srms, fr_srms)
+        fft_p3   = _corr_v(fft_p3,   fr_p3)
+        fft_s3   = _corr_v(fft_s3,   fr_s3)
 
         atr['P_vertical'],  atr['t_acc_pv']  = scale_spectrum(
             ps['A_p_vertical'], fft_p3, fr_p3, time_arr,
@@ -174,29 +196,31 @@ def _process_one_subsource(args: tuple) -> dict:
 
         fft_p, fr_p = _fft_std(P_win)
         fft_s, fr_s = _fft_std(S_win)
+        fft_p_h, fft_s_h = _corr_h(fft_p, fr_p), _corr_h(fft_s, fr_s)   # horizontals
+        fft_p_v, fft_s_v = _corr_v(fft_p, fr_p), _corr_v(fft_s, fr_s)   # verticals
 
         atr['P_vertical'],  atr['t_acc_pv']  = scale_spectrum(
-            ps['A_p_vertical'], fft_p, fr_p, time_arr,
+            ps['A_p_vertical'], fft_p_v, fr_p, time_arr,
             standard_freqs, factor=H_p,
             incidence=theta_p, polarization='vertical', wave_type='P'
         )
         atr['P_radial'],    atr['t_acc_pr']  = scale_spectrum(
-            ps['A_p_radial'], fft_p, fr_p, time_arr,
+            ps['A_p_radial'], fft_p_h, fr_p, time_arr,
             standard_freqs, factor=H_p,
             incidence=theta_p, polarization='radial', wave_type='P'
         )
         atr['SV_vertical'], atr['t_acc_svv'] = scale_spectrum(
-            ps['A_sv_vertical'], fft_s, fr_s, time_arr,
+            ps['A_sv_vertical'], fft_s_v, fr_s, time_arr,
             standard_freqs, factor=H_s,
             incidence=theta_s, polarization='vertical', wave_type='SV'
         )
         atr['SV_radial'],   atr['t_acc_svr'] = scale_spectrum(
-            ps['A_sv_radial'], fft_s, fr_s, time_arr,
+            ps['A_sv_radial'], fft_s_h, fr_s, time_arr,
             standard_freqs, factor=H_s,
             incidence=theta_s, polarization='radial', wave_type='SV'
         )
         atr['SH'],          atr['t_acc_sh']  = scale_spectrum(
-            ps['A_sh'], fft_s, fr_s, time_arr,
+            ps['A_sh'], fft_s_h, fr_s, time_arr,
             standard_freqs, factor=H_s,
             incidence=theta_s, polarization='tangential', wave_type='SH'
         )
@@ -401,6 +425,17 @@ class EQ:
         self.local_coords = (medium.system == 'local')
         self.hypocenter_geographic = hypocenter   # ← add this line, before _set_coordinates()
         self._set_coordinates(hypocenter, site_coord)
+
+        # Interfrequency-correlated noise (built once; Cholesky is cached)
+        self._corr_noise = None
+        if getattr(sim, 'corr_noise', None) is not None:
+            self._corr_noise = sim.corr_noise.build(Mw=Mw)
+            if not point_source:
+                warnings.warn(
+                    "Correlated noise with a finite-fault model: each sub-source "
+                    "gets an independent epsilon, so the summed motion is NOT "
+                    "constrained to the target correlation / sigma "
+                    "(summing sub-sources averages the scatter out).")
 
         # Common params dict passed to add_noise
         self.params = {
@@ -680,6 +715,7 @@ class EQ:
         # -------------------------------------------------------
         # - Run the simulation
         # -------------------------------------------------------
+        self.psources = idealizations   # deterministic sub-source spectra (for inspection / verification)
         self.sim_acc = []
         for psource, N_ps in zip(idealizations, n_sources_list):
 
@@ -953,7 +989,8 @@ class EQ:
         stddev         = params['stddev']
 
         args = [
-            (ps, sim_seed[i], dt, standard_freqs, duration_max, stddev)
+            (ps, sim_seed[i], dt, standard_freqs, duration_max, stddev,
+             self._corr_noise)
             for i, ps in enumerate(PSource)
         ]
 

@@ -66,6 +66,14 @@ from .config import (
     SimConfig,
 )
 
+# ── Interfrequency-correlated noise (Bayless & Abrahamson 2019) ──────────────
+from .correlated_noise import (
+    CorrelatedNoiseConfig,
+    CorrelatedNoise,
+    load_ba19,
+    load_matrix_csv,
+)
+
 # ── Physics / utility functions (available for advanced users) ───────────────
 from .physics import (
     # geometry
@@ -103,6 +111,11 @@ __all__ = [
     "SiteConfig",
     "DurationConfig",
     "SimConfig",
+    # correlated noise
+    "CorrelatedNoiseConfig",
+    "CorrelatedNoise",
+    "load_ba19",
+    "load_matrix_csv",
     # physics
     "vector_plane_angle",
     "locate_site",
