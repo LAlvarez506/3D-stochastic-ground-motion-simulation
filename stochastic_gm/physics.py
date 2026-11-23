@@ -479,13 +479,18 @@ def scale_spectrum(A_spectrum: np.ndarray,
             print("scale_spectrum: incidence angle required when TF is provided.")
 
     # --- Build spectrum function on the noise frequency grid ----------------
+    N         = len(noise_fft)
+    # TEST FIX: |noise_fft| has rms sqrt(N) (see _fft_std) and A_spectrum is the
+    # physical Fourier amplitude [signal x s]; the DFT coefficient that gives a
+    # signal whose physical FAS has rms A is  A * |X| / (sqrt(N) * dt).
+    dt_ = float(time[1] - time[0])
+    scale_ = 1. / (np.sqrt(N) * dt_)
     spectrum_fn = scipy.interpolate.interp1d(
-        standard_freqs, A_spectrum / 2.,   # /2: half energy to negative branch
+        standard_freqs, A_spectrum * scale_,
         kind='linear', bounds_error=False,
-        fill_value=(A_spectrum[0] / 2., A_spectrum[-1] / 2.)
+        fill_value=(A_spectrum[0] * scale_, A_spectrum[-1] * scale_)
     )
 
-    N         = len(noise_fft)
     mask      = noise_freqs > 0
     fas_noise = np.abs(noise_fft[mask])
     phases    = np.angle(noise_fft[mask])
@@ -626,6 +631,7 @@ def window_function(window_params: dict, Tgm: float, dt: float,
     a   = (math.e / eps) ** b
 
     def residual(ti):
+        ti = float(np.ravel(ti)[0])   # scipy passes a 1-element array; newer numpy refuses math.exp on it
         return (a * (ti / Tw) ** b * math.exp(-c * ti / Tw) - decay_value) ** 2.
 
     res   = minimize(residual, Tgm, method='L-BFGS-B', tol=1e-3,
