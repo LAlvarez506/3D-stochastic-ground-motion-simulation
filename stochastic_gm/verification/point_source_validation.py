@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-stochastic_gm/examples/point_source_validation.py
+stochastic_gm/verification/point_source_validation.py
 --------------------------------------------------
 Point-source validation example.
 
 Run from any directory once the package is installed:
-    python -m stochastic_gm.examples.point_source_validation
+    python -m stochastic_gm.verification.point_source_validation
 
 Or import directly:
-    from stochastic_gm.examples.point_source_validation import run
+    from stochastic_gm.verification.point_source_validation import run
     run(output_dir="./my_output")
 
 Structure
@@ -25,6 +25,7 @@ All velocities in km/s, distances in km.
 from __future__ import annotations
 import os
 import numpy as np
+from scipy.signal import cont2discrete, lfilter
 import matplotlib
 matplotlib.use("Agg")   # headless-safe; swap to 'TkAgg' / 'Qt5Agg' for interactive
 import matplotlib.pyplot as plt
@@ -66,49 +67,28 @@ plt.rcParams.update({
 })
 
 # ============================================================
-# RESPONSE SPECTRUM (Newmark-β, 5% damping)
+# RESPONSE SPECTRUM (5% damping, piecewise-linear input)
 # ============================================================
 def response_spectrum(acc, dt, periods, damping=0.05):
-    beta_n, gamma = 0.25, 0.5
-    periods = np.array(periods)
+    """
+    Pseudo-spectral acceleration SA = w^2 max|u| of a damped SDOF oscillator
+    for a ground acceleration ``acc`` sampled at ``dt``.
+
+    The oscillator transfer function u/a_g = -1/(s^2 + 2 z w s + w^2) is
+    discretised with a first-order hold, which is exact for a piecewise-linear
+    input, and applied with ``lfilter``.  (The previous Newmark-beta loop mixed
+    total and incremental forces and diverged to NaN.)
+    """
+    acc = np.asarray(acc, dtype=float)
+    periods = np.asarray(periods, dtype=float)
     periods = periods[periods > 1e-6]  # avoid division by zero
-    
-    omega = 2*np.pi / periods
-    SA = np.zeros_like(periods)
-
-    for k, w in enumerate(omega):
-        c = 2*damping*w
-        ks = w**2
-        kk = ks + gamma/(beta_n*dt)*c + 1/(beta_n*dt**2)
-
-        n = len(acc)
-        u = np.zeros(n)
-        v = np.zeros(n)
-        a = np.zeros(n)
-
-        # Correct initial conditions:
-        a[0] = -acc[0]
-
-        for i in range(n-1):
-            dp = (-acc[i+1]
-                  + (ks + c*gamma/(beta_n*dt)) * u[i]
-                  + (1/(beta_n*dt) + c*gamma/beta_n) * v[i]
-                  + (1/(2*beta_n) - 1) * a[i])
-
-            du = dp / kk
-            da = ((du - u[i]) / (beta_n * dt**2)
-                  - v[i] / (beta_n * dt)
-                  - (1/(2*beta_n) - 1) * a[i])
-
-            # Correct Newmark velocity update:
-            dv = dt * ((1 - gamma) * a[i] + gamma * (a[i] + da))
-
-            u[i+1] = u[i] + du
-            v[i+1] = v[i] + dv
-            a[i+1] = a[i] + da
-
-        SA[k] = np.max(np.abs(u)) * w**2
-
+    SA = np.empty(len(periods))
+    for k, T in enumerate(periods):
+        w = 2 * np.pi / T
+        num, den, _ = cont2discrete(([-1.0], [1.0, 2 * damping * w, w * w]),
+                                    dt, method='foh')
+        u = lfilter(num.ravel(), den, acc)
+        SA[k] = np.max(np.abs(u)) * w ** 2
     return SA
 
 # ============================================================
@@ -221,7 +201,7 @@ def run(
         point_source=True, gm_type='acc', print_info=False,
     )
 
-    ps_out   = eq_ref.theta[0]['PSource'][0]
+    ps_out   = eq_ref.psources[0][0]
     t_P_code = ps_out['to_p']
     t_S_code = ps_out['to_s']
     fc_s     = ps_out['fc_s_ij']
@@ -385,7 +365,6 @@ def run(
         NS_sd, EW_sd, UD_sd = eq_sd.sim_acc[0]
         for sig, ax3 in zip([NS_sd, EW_sd, UD_sd], axes3):
             SA = response_spectrum(sig, dt, T_sa)
-            breakpoint()
             ax3.loglog(T_sa, SA, lw=lw, color=col, alpha=al,
                        label=f"Δσ={sd:.0f} bar")
         print("done")
@@ -439,7 +418,7 @@ def run(
     )
 
 
-# ── Allow  `python -m stochastic_gm.examples.point_source_validation` ───────
+# ── Allow  `python -m stochastic_gm.verification.point_source_validation` ───────
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Point-source validation example")
