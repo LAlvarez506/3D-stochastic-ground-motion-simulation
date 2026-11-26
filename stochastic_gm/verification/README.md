@@ -12,6 +12,7 @@ also needs `pip install pygmm`.
 | 2 | `verify_noise_scaled_spectra` | Deterministic spectrum vs noise-scaled spectra; amplitude scaling | minutes (n-sim 1000) |
 | 3 | `verify_rvt` | Energy (Parseval) and peak motion by random vibration theory (Boore 2003) | ~10 s |
 | 4 | `verify_gmpe_ab06` | PGA/PSA against the Atkinson & Boore (2006) GMPE, plus an independent Boore point-source/RVT model | ~30 s |
+| 5 | `verify_finite_fault_postprocess` | Correlated noise imposed on summed finite-fault records (`postprocess`): correlation, sigma, energy, components | ~12 min (n-sim 800) |
 
 `rvt.py` holds the RVT helpers (spectral moments, Cartwright & Longuet-Higgins peak factor, Eq. 38
 duration, SDOF response); `rvt.self_test()` checks them against Monte-Carlo stationary noise (~1 %).
@@ -92,3 +93,41 @@ Results (median over distance):
 Caveats: AB06 is finite-fault derived, so a point source is only comparable at small and moderate magnitudes and not
 very close to the fault; the simulator uses the physical radiation pattern, incidence angle and free-surface factors,
 AB06 uses the average values.
+
+## 5. Finite-fault post-processing (`verify_finite_fault_postprocess`)
+```
+python -m stochastic_gm.verification.verify_finite_fault_postprocess --n-sim 800 [--mode replace|scale] [--smoothing-b 10]
+```
+Scenario: synthetic planar fault (Mw 6.5, 20 x 10 km, 60° dip, 8 x 4 sub-sources, rupture speed 2.8 km/s), site 25 km
+from the fault, homogeneous half space. Three ensembles of summed records are compared against the BA19 within-site model
+(the same smoothed-EAS estimator as test 1, b = 188.5):
+
+* **baseline** – independent noise per sub-source (no correlation);
+* **per-subsource** – `SimConfig.corr_noise` on the finite fault (a correlated epsilon per sub-source, then summed);
+* **post-processed** – baseline + `postprocess_eq(eq, CorrelatedNoiseConfig(...))`: one epsilon on the summed record.
+
+Checks: (1) correlation RMSE <= 2/sqrt(n_sim); (2) mean ratio of the std of ln EAS to sigma(f; Mw) within 10 %;
+(3) mean energy ratio post/original within 3 standard errors of 1 (normalization `expected`; the ratio is heavy-tailed
+because the residual is strongly correlated in frequency); (4) vertical identical and NS/EW ratio unchanged.
+
+Result (n_sim = 800): correlation RMSE baseline 0.383, per-subsource 0.355, **post-processed 0.052** (sampling noise 0.035);
+std of ln EAS / target: per-subsource 0.86, **post-processed 1.06** (0.21-0.37 at 5-20 Hz for the others against targets 0.37-0.45);
+mean energy ratio 0.956 (standard error 0.018); NS/EW energy ratio factor 0.996; vertical identical. PASS.
+
+The per-subsource result shows why post-processing is needed: summing independent correlated draws removes the correlation
+(the sum is dominated by the diagonal) and shrinks sigma at high frequency.
+
+Notes on the method and its knobs:
+
+* `smoothing_b` (default 10) sets the bandwidth of the reference spectrum. Wider smoothing (b = 5) recovers sigma and correlation a
+  little better (RMSE 0.064 vs 0.072 at n_sim = 300, sigma ratio 1.00 vs 1.04), but flattens real spectral structure
+  (directivity, sub-source corners); b = 20 gives RMSE 0.086 and sigma ratio 1.09. The smoothed spectrum is rescaled so the energy
+  of each component is unchanged.
+* `mode='scale'` (multiply the record's own spectrum by F) keeps the record's scatter, so the total variability is its own plus
+  BA19: sigma ratio 1.3 and RMSE 0.16 here. Use it only if that is what you want to study.
+* With `normalization='per_realization'` the energy of every record is exactly preserved (at the cost of distorting sigma and
+  the correlation, as in the point source); `expected` preserves it on average; `none` leaves the median unchanged.
+* Residual differences from the model are largest at 0.2-0.5 Hz, where the record has few frequency bins inside the reference
+  window (about 23 s records).
+* One epsilon is drawn per record, i.e. per site and per realization. Several sites of the same event are not correlated with each
+  other by this tool (spatial correlation and the between-event component are out of scope).

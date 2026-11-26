@@ -255,9 +255,23 @@ The standard deviations (tau, phi_S2S, phi_ss and the total) are those of the BA
 model and depend on magnitude (interpolated between M 4 and 6). The matrices cover
 0.1-24 Hz; values are held outside that band. The between-event matrix is not bundled.
 
-**Finite fault:** each sub-source currently receives its own independent epsilon, so the
-summed motion is not constrained to the target; the code warns. A post-processing
-constraint on the summed motion is planned.
+**Finite fault (post-processing).** A correlated epsilon drawn per sub-source does not survive the summation
+(the sum is smoother and its variance is reduced; `EQ` warns if you set `corr_noise` on a finite fault). Instead,
+leave `corr_noise=None` and impose one epsilon on the summed record with `stochastic_gm.postprocess`:
+
+```python
+from stochastic_gm import CorrelatedNoiseConfig, postprocess_eq
+
+eq.run_simulation()                       # finite fault, independent noise per sub-source
+cfg = CorrelatedNoiseConfig(correlation_type='within_site', normalization='expected')
+acc = postprocess_eq(eq, cfg, seed=7)     # list of (NS, EW, UD); eq.sim_acc is not modified
+```
+
+Each record is rescaled to its own Konno-Ohmachi smoothed spectrum (`smoothing_b`, default 10), the BA19 residual
+(one epsilon per record, the same on NS and EW; UD only with `apply_to='all'`) is imposed with the phases kept
+(`mode='replace'`, default) or multiplied on top of the record's own scatter (`mode='scale'`). It also works on
+any list of (NS, EW, UD) records through `postprocess_records(records, dt, cfg, Mw=...)`. See
+[`stochastic_gm/verification/README.md`](stochastic_gm/verification/README.md) (test 5).
 
 ### P/S noise independence
 
@@ -274,6 +288,7 @@ python -m stochastic_gm.verification.verify_interfrequency_correlation --n-sim 2
 python -m stochastic_gm.verification.verify_noise_scaled_spectra --n-sim 1000
 python -m stochastic_gm.verification.verify_rvt --n-sim 100
 python -m stochastic_gm.verification.verify_gmpe_ab06 --n-sim 60     # needs: pip install pygmm
+python -m stochastic_gm.verification.verify_finite_fault_postprocess --n-sim 800   # ~10 min
 ```
 
 The first simulates many realizations, computes the Konno-Ohmachi smoothed EAS and

@@ -444,7 +444,10 @@ class EQ:
                     "Correlated noise with a finite-fault model: each sub-source "
                     "gets an independent epsilon, so the summed motion is NOT "
                     "constrained to the target correlation / sigma "
-                    "(summing sub-sources averages the scatter out).")
+                    "(summing sub-sources averages the scatter out). For a finite "
+                    "fault leave SimConfig.corr_noise=None and apply the correlated "
+                    "noise to the summed records with "
+                    "stochastic_gm.postprocess.postprocess_eq(eq, CorrelatedNoiseConfig(...)).")
 
         # Common params dict passed to add_noise
         self.params = {

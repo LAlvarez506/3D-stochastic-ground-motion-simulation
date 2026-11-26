@@ -73,6 +73,7 @@ from .correlated_noise import (
     load_ba19,
     load_matrix_csv,
 )
+from .postprocess import postprocess_eq, postprocess_records, postprocess_record
 
 # ── Physics / utility functions (available for advanced users) ───────────────
 from .physics import (
@@ -115,6 +116,9 @@ __all__ = [
     "CorrelatedNoiseConfig",
     "CorrelatedNoise",
     "load_ba19",
+    "postprocess_eq",
+    "postprocess_records",
+    "postprocess_record",
     "load_matrix_csv",
     # physics
     "vector_plane_angle",
