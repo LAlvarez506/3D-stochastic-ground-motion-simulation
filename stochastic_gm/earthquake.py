@@ -58,7 +58,7 @@ def _process_one_subsource(args: tuple) -> dict:
     import math
     from stochastic_gm.physics import white_noise, FFT, scale_spectrum
 
-    ps, sim_seed, dt, standard_freqs, duration_max, _, noise_corr = args
+    ps, sim_seed, dt, standard_freqs, duration_max, _, noise_corr, indep_ps = args
 
     Normalization = None
     n_samples     = ps['n_samples']
@@ -73,6 +73,15 @@ def _process_one_subsource(args: tuple) -> dict:
     # 1. Generate unit-variance white noise (NOT duration-scaled)
     # ------------------------------------------------------------------
     wNoise = white_noise(n_samples, standard_dev=1.0, seed=sim_seed)
+    # S-wave noise: independent of the P-wave noise (default) or the same
+    # sequence (independent_ps_noise=False, the original behaviour).  With a
+    # shared sequence and overlapping P/S windows the opposite-sign radial P and
+    # SV terms partly cancel and the energy falls below the target.
+    if indep_ps:
+        _s_seed = int(np.random.SeedSequence([int(sim_seed), 0x5EED]).generate_state(1)[0])
+        wNoise_s = white_noise(n_samples, standard_dev=1.0, seed=_s_seed)
+    else:
+        wNoise_s = wNoise
 
     # ------------------------------------------------------------------
     # Window construction helper
@@ -92,8 +101,8 @@ def _process_one_subsource(args: tuple) -> dict:
     # ------------------------------------------------------------------
     # FFT helper with **time-domain energy normalization**
     # ------------------------------------------------------------------
-    def _fft_std(win):
-        wn = wNoise * win
+    def _fft_std(win, noise=None):
+        wn = (wNoise if noise is None else noise) * win
 
         # --- RMS normalization ---
         E = np.sum(wn**2) * dt
@@ -146,9 +155,9 @@ def _process_one_subsource(args: tuple) -> dict:
         time_arr = np.arange(n_samples) * dt
 
         fft_prms, fr_prms = _fft_std(PRMS_win)
-        fft_srms, fr_srms = _fft_std(SRMS_win)
+        fft_srms, fr_srms = _fft_std(SRMS_win, wNoise_s)
         fft_p3,   fr_p3   = _fft_std(P3_win)
-        fft_s3,   fr_s3   = _fft_std(S3_win)
+        fft_s3,   fr_s3   = _fft_std(S3_win, wNoise_s)
 
         fft_prms = _corr_h(fft_prms, fr_prms)
         fft_srms = _corr_h(fft_srms, fr_srms)
@@ -195,7 +204,7 @@ def _process_one_subsource(args: tuple) -> dict:
         )
 
         fft_p, fr_p = _fft_std(P_win)
-        fft_s, fr_s = _fft_std(S_win)
+        fft_s, fr_s = _fft_std(S_win, wNoise_s)
         fft_p_h, fft_s_h = _corr_h(fft_p, fr_p), _corr_h(fft_s, fr_s)   # horizontals
         fft_p_v, fft_s_v = _corr_v(fft_p, fr_p), _corr_v(fft_s, fr_s)   # verticals
 
@@ -990,7 +999,7 @@ class EQ:
 
         args = [
             (ps, sim_seed[i], dt, standard_freqs, duration_max, stddev,
-             self._corr_noise)
+             self._corr_noise, bool(getattr(self.sim_cfg, 'independent_ps_noise', True)))
             for i, ps in enumerate(PSource)
         ]
 

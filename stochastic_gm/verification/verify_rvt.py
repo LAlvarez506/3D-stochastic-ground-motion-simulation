@@ -72,7 +72,7 @@ CHECKED = 3        # PGA, PSA 0.1 s and 0.3 s are pass/fail; 1 s and 3 s are inf
 
 
 def run(n_sim=100, seed=1, mws=(5., 6., 7.), dists=(10., 30., 100.), dt=0.01,
-        tol_energy=0.05, tol_rvt=0.25, ftgm=2.0, output_dir='./verification_output',
+        tol_energy=0.05, tol_rvt=0.25, ftgm=2.0, independent_ps_noise=True, output_dir='./verification_output',
         show=False):
     import matplotlib
     if not show:
@@ -89,7 +89,8 @@ def run(n_sim=100, seed=1, mws=(5., 6., 7.), dists=(10., 30., 100.), dt=0.01,
         for R in dists:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
-                eq = build_scenario(n_sim, seed, None, Mw=Mw, dist_km=R, dt=dt, ftgm=ftgm)
+                eq = build_scenario(n_sim, seed, None, Mw=Mw, dist_km=R, dt=dt, ftgm=ftgm,
+                                      independent_ps_noise=independent_ps_noise)
             ps = eq.psources[0][0]
             f, Y = target_eas(ps)
             Tgm = float(ps['tgm_s'])
@@ -143,9 +144,12 @@ def main():
     p.add_argument('--tol-rvt', type=float, default=0.25)
     p.add_argument('--ftgm', type=float, default=2.0,
                    help='window Tw/Tgm; Boore (2003) uses 2.0, the example scripts 0.5')
+    p.add_argument('--shared-ps-noise', action='store_true',
+                   help='use ONE noise sequence for P and S (original behaviour)')
     p.add_argument('--output-dir', default='./verification_output')
     a = p.parse_args()
     sys.exit(0 if run(a.n_sim, a.seed, tol_energy=a.tol_energy, tol_rvt=a.tol_rvt, ftgm=a.ftgm,
+                      independent_ps_noise=not a.shared_ps_noise,
                       output_dir=a.output_dir) else 1)
 
 

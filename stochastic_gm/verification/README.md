@@ -44,13 +44,14 @@ python -m stochastic_gm.verification.verify_rvt --n-sim 100 [--ftgm 2.0]
 * `--ftgm` is Tw/Tgm of the window. Boore uses 2.0 (default of this test); the example scripts use 0.5, which packs
   the energy into about a quarter of the duration, so RVT with Tgm then overpredicts long-period PSA.
 
-Result (Tw = 2 Tgm): PGA RVT/simulation 1.03-1.18; PSA 0.1 s 0.98-1.27; PSA 0.3 s 1.03-1.26.
+Result (Tw = 2 Tgm, independent P/S noise, the default): energy ratio 0.97-1.01 in all nine scenarios; RVT/simulation for PGA
+0.94-1.07, PSA 0.1 s 0.95-1.01, PSA 0.3 s 0.97-1.23; PASS.
 
-**Known finding.** For large magnitude, short distance and long windows the energy ratio falls to 0.67-0.9 and the
-script reports FAIL. Cause: P and S are built from the *same* white-noise sequence; the horizontal radial motion adds
-P (-sin θp) and SV (+cos θs) with opposite signs, so the common part cancels when the P and S windows overlap. With
-independent noise for P and S the ratio is 0.99-1.00 in every scenario (tested on a scratch copy, not yet applied
-to the package).
+**P/S noise option.** `SimConfig(independent_ps_noise=True)` (default) draws independent white-noise sequences for the P and S
+waves. With `False` (original behaviour, `--shared-ps-noise` in this script) one sequence is shared; when the P and S windows overlap
+(large magnitude, short distance, long window) the radial P (-sin θp) and SV (+cos θs) terms have opposite signs and partly cancel,
+and the energy falls to 0.67-0.9 of m0 (the script then reports FAIL). The shared option is kept for sensitivity /
+uncertainty-propagation studies.
 
 ## 4. GMPE comparison (`verify_gmpe_ab06`)
 ```
@@ -79,10 +80,10 @@ Criteria: (a) code check, simulator/independent-RVT within a factor 1.25 at PGA,
 
 Results (median over distance):
 
-* Simulator / textbook RVT: PGA 1.08-1.09, PSA 0.1 s 0.91-0.93, 0.2 s 0.83-0.88 (lower at 0.5-1 s, where RVT is known to
+* Simulator / textbook RVT: PGA 1.07-1.08, PSA 0.1 s 0.90-0.92, 0.2 s 0.83-0.88 (lower at 0.5-1 s, where RVT is known to
   overestimate).
-* `r-1-spreading`, simulator / AB06: PGA 1.07 (Mw 5), 1.23 (Mw 6); PSA 0.1 s 0.95, 1.11; PSA 0.2 s 1.06, 1.06; PSA 0.5 s 1.22, 1.12;
-  PSA 1 s 1.27, 1.32. Within the GMPE's own ±1σ everywhere.
+* `r-1-spreading`, simulator / AB06 (Mw 5, Mw 6): PGA 1.06, 1.22; PSA 0.1 s 0.95, 1.10; PSA 0.2 s 1.07, 1.08; PSA 0.5 s 1.27, 1.19;
+  PSA 1 s 1.36, 1.36. Within the GMPE's own ±1σ everywhere.
 * `ab06-literal`: both simulator and independent RVT sit at 0.3-0.4 of AB06 for PGA and ~0.7 at 1 s, with a distance trend of
   roughly R^-0.3. Because two independent implementations agree, this is a parameter-equivalence issue (the AB06 GMPE is a
   regression to finite-fault simulations; an R^-1.3 spreading referenced to 1 km does not reproduce its level at short periods),

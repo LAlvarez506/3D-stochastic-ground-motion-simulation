@@ -259,6 +259,12 @@ model and depend on magnitude (interpolated between M 4 and 6). The matrices cov
 summed motion is not constrained to the target; the code warns. A post-processing
 constraint on the summed motion is planned.
 
+### P/S noise independence
+
+`SimConfig(independent_ps_noise=True)` (default) uses independent white noise for the P and S waves of each
+sub-source. `False` reproduces the earlier behaviour (one shared sequence), which loses energy when the P and S
+windows overlap. Both are kept so the effect can be used in sensitivity analyses.
+
 ### Verification
 
 All tests are described in [`stochastic_gm/verification/README.md`](stochastic_gm/verification/README.md).
