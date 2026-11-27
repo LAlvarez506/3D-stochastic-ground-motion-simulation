@@ -457,5 +457,16 @@ class SimConfig:
     window_s3_dur:   Optional[float]      = None
     window_standard_time: Optional[np.ndarray] = None
 
+    # Interfrequency-correlated noise (Bayless & Abrahamson 2019).
+    # A ``CorrelatedNoiseConfig`` (see correlated_noise.py) or None (default:
+    # original uncorrelated noise, behaviour unchanged).
+    corr_noise: Optional[object] = None
+
+    # P and S waves use independent white-noise sequences (default True).
+    # False reproduces the original behaviour (one sequence shared by P and S),
+    # which loses energy when the P and S windows overlap; useful as a
+    # sensitivity/uncertainty-propagation option.
+    independent_ps_noise: bool = True
+
     def __post_init__(self):
         self.freq_ps = np.asarray(self.freq_ps, dtype=float)

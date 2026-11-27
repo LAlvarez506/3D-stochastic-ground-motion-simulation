@@ -33,6 +33,7 @@ from __future__ import annotations
 import math
 import time
 import random
+import warnings
 import multiprocessing as mp
 
 import numpy as np
@@ -57,7 +58,7 @@ def _process_one_subsource(args: tuple) -> dict:
     import math
     from stochastic_gm.physics import white_noise, FFT, scale_spectrum
 
-    ps, sim_seed, dt, standard_freqs, duration_max, _ = args
+    ps, sim_seed, dt, standard_freqs, duration_max, _, noise_corr, indep_ps = args
 
     Normalization = None
     n_samples     = ps['n_samples']
@@ -72,6 +73,15 @@ def _process_one_subsource(args: tuple) -> dict:
     # 1. Generate unit-variance white noise (NOT duration-scaled)
     # ------------------------------------------------------------------
     wNoise = white_noise(n_samples, standard_dev=1.0, seed=sim_seed)
+    # S-wave noise: independent of the P-wave noise (default) or the same
+    # sequence (independent_ps_noise=False, the original behaviour).  With a
+    # shared sequence and overlapping P/S windows the opposite-sign radial P and
+    # SV terms partly cancel and the energy falls below the target.
+    if indep_ps:
+        _s_seed = int(np.random.SeedSequence([int(sim_seed), 0x5EED]).generate_state(1)[0])
+        wNoise_s = white_noise(n_samples, standard_dev=1.0, seed=_s_seed)
+    else:
+        wNoise_s = wNoise
 
     # ------------------------------------------------------------------
     # Window construction helper
@@ -91,8 +101,8 @@ def _process_one_subsource(args: tuple) -> dict:
     # ------------------------------------------------------------------
     # FFT helper with **time-domain energy normalization**
     # ------------------------------------------------------------------
-    def _fft_std(win):
-        wn = wNoise * win
+    def _fft_std(win, noise=None):
+        wn = (wNoise if noise is None else noise) * win
 
         # --- RMS normalization ---
         E = np.sum(wn**2) * dt
@@ -103,6 +113,22 @@ def _process_one_subsource(args: tuple) -> dict:
 
         f_, fr = FFT(wn, dt, norm=Normalization)
         return f_, fr
+
+    # ------------------------------------------------------------------
+    # Interfrequency-correlated noise (optional).  Replaces the amplitude
+    # of the windowed-noise FFT, keeps its phase.  The same epsilon (same
+    # seed) is used for P and S.  Horizontal components always get it;
+    # vertical components only if apply_to == 'all'.
+    # ------------------------------------------------------------------
+    def _corr_h(fft_, fr_):
+        if noise_corr is None:
+            return fft_
+        return noise_corr.apply_to_noise_fft(fft_, fr_, sim_seed)
+
+    def _corr_v(fft_, fr_):
+        if noise_corr is None or noise_corr.cfg.apply_to != 'all':
+            return fft_
+        return noise_corr.apply_to_noise_fft(fft_, fr_, sim_seed)
 
     # ------------------------------------------------------------------
     # GIT window case
@@ -129,9 +155,14 @@ def _process_one_subsource(args: tuple) -> dict:
         time_arr = np.arange(n_samples) * dt
 
         fft_prms, fr_prms = _fft_std(PRMS_win)
-        fft_srms, fr_srms = _fft_std(SRMS_win)
+        fft_srms, fr_srms = _fft_std(SRMS_win, wNoise_s)
         fft_p3,   fr_p3   = _fft_std(P3_win)
-        fft_s3,   fr_s3   = _fft_std(S3_win)
+        fft_s3,   fr_s3   = _fft_std(S3_win, wNoise_s)
+
+        fft_prms = _corr_h(fft_prms, fr_prms)
+        fft_srms = _corr_h(fft_srms, fr_srms)
+        fft_p3   = _corr_v(fft_p3,   fr_p3)
+        fft_s3   = _corr_v(fft_s3,   fr_s3)
 
         atr['P_vertical'],  atr['t_acc_pv']  = scale_spectrum(
             ps['A_p_vertical'], fft_p3, fr_p3, time_arr,
@@ -173,30 +204,32 @@ def _process_one_subsource(args: tuple) -> dict:
         )
 
         fft_p, fr_p = _fft_std(P_win)
-        fft_s, fr_s = _fft_std(S_win)
+        fft_s, fr_s = _fft_std(S_win, wNoise_s)
+        fft_p_h, fft_s_h = _corr_h(fft_p, fr_p), _corr_h(fft_s, fr_s)   # horizontals
+        fft_p_v, fft_s_v = _corr_v(fft_p, fr_p), _corr_v(fft_s, fr_s)   # verticals
 
         atr['P_vertical'],  atr['t_acc_pv']  = scale_spectrum(
-            ps['A_p_vertical'], fft_p, fr_p, time_arr,
+            ps['A_p_vertical'], fft_p_v, fr_p, time_arr,
             standard_freqs, factor=H_p,
             incidence=theta_p, polarization='vertical', wave_type='P'
         )
         atr['P_radial'],    atr['t_acc_pr']  = scale_spectrum(
-            ps['A_p_radial'], fft_p, fr_p, time_arr,
+            ps['A_p_radial'], fft_p_h, fr_p, time_arr,
             standard_freqs, factor=H_p,
             incidence=theta_p, polarization='radial', wave_type='P'
         )
         atr['SV_vertical'], atr['t_acc_svv'] = scale_spectrum(
-            ps['A_sv_vertical'], fft_s, fr_s, time_arr,
+            ps['A_sv_vertical'], fft_s_v, fr_s, time_arr,
             standard_freqs, factor=H_s,
             incidence=theta_s, polarization='vertical', wave_type='SV'
         )
         atr['SV_radial'],   atr['t_acc_svr'] = scale_spectrum(
-            ps['A_sv_radial'], fft_s, fr_s, time_arr,
+            ps['A_sv_radial'], fft_s_h, fr_s, time_arr,
             standard_freqs, factor=H_s,
             incidence=theta_s, polarization='radial', wave_type='SV'
         )
         atr['SH'],          atr['t_acc_sh']  = scale_spectrum(
-            ps['A_sh'], fft_s, fr_s, time_arr,
+            ps['A_sh'], fft_s_h, fr_s, time_arr,
             standard_freqs, factor=H_s,
             incidence=theta_s, polarization='tangential', wave_type='SH'
         )
@@ -401,6 +434,20 @@ class EQ:
         self.local_coords = (medium.system == 'local')
         self.hypocenter_geographic = hypocenter   # ← add this line, before _set_coordinates()
         self._set_coordinates(hypocenter, site_coord)
+
+        # Interfrequency-correlated noise (built once; Cholesky is cached)
+        self._corr_noise = None
+        if getattr(sim, 'corr_noise', None) is not None:
+            self._corr_noise = sim.corr_noise.build(Mw=Mw)
+            if not point_source:
+                warnings.warn(
+                    "Correlated noise with a finite-fault model: each sub-source "
+                    "gets an independent epsilon, so the summed motion is NOT "
+                    "constrained to the target correlation / sigma "
+                    "(summing sub-sources averages the scatter out). For a finite "
+                    "fault leave SimConfig.corr_noise=None and apply the correlated "
+                    "noise to the summed records with "
+                    "stochastic_gm.postprocess.postprocess_eq(eq, CorrelatedNoiseConfig(...)).")
 
         # Common params dict passed to add_noise
         self.params = {
@@ -680,6 +727,7 @@ class EQ:
         # -------------------------------------------------------
         # - Run the simulation
         # -------------------------------------------------------
+        self.psources = idealizations   # deterministic sub-source spectra (for inspection / verification)
         self.sim_acc = []
         for psource, N_ps in zip(idealizations, n_sources_list):
 
@@ -953,7 +1001,8 @@ class EQ:
         stddev         = params['stddev']
 
         args = [
-            (ps, sim_seed[i], dt, standard_freqs, duration_max, stddev)
+            (ps, sim_seed[i], dt, standard_freqs, duration_max, stddev,
+             self._corr_noise, bool(getattr(self.sim_cfg, 'independent_ps_noise', True)))
             for i, ps in enumerate(PSource)
         ]
 

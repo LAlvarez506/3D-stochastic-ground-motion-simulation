@@ -176,9 +176,15 @@ class PointSource:
         )
 
         # --- Azimuth ---
-        pos          = [ps_centroid[0] - self.site_coord[0],
-                        ps_centroid[1] - self.site_coord[1]]
-        self.azimuth = vector_plane_angle([0., 1.], pos)
+        # Geographic azimuth of the site seen from the source, clockwise from north
+        # (+y), in [0, 2*pi).  It is used to rotate (radial, tangential) into (NS, EW):
+        # radial = (cos az, sin az) points away from the source, tangential =
+        # (-sin az, cos az).  The previous version used the UNSIGNED angle between +y
+        # and the site->source vector (acos), which cannot tell east from west and
+        # rotated the horizontals by 180 deg - 2 az for sites east of the source.
+        dx = self.site_coord[0] - ps_centroid[0]
+        dy = self.site_coord[1] - ps_centroid[1]
+        self.azimuth = m.atan2(dx, dy) % (2. * m.pi)
 
         # --- Build layered medium up to source depth ---
         # Depths [km], velocities [km/s], density [g/cm³]
