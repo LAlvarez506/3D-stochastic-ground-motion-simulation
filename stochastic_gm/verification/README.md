@@ -13,6 +13,7 @@ also needs `pip install pygmm`.
 | 3 | `verify_rvt` | Energy (Parseval) and peak motion by random vibration theory (Boore 2003) | ~10 s |
 | 4 | `verify_gmpe_ab06` | PGA/PSA against the Atkinson & Boore (2006) GMPE, plus an independent Boore point-source/RVT model | ~30 s |
 | 5 | `verify_finite_fault_postprocess` | Correlated noise imposed on summed finite-fault records (`postprocess`): correlation, sigma, energy, components | ~12 min (n-sim 800) |
+| 6 | `verify_azimuth` | Orientation of the horizontals: before S the energy lies on the radial axis for every site azimuth (checks the source-to-site azimuth used to rotate P/SV/SH into NS/EW) | ~10 s |
 
 `rvt.py` holds the RVT helpers (spectral moments, Cartwright & Longuet-Higgins peak factor, Eq. 38
 duration, SDOF response); `rvt.self_test()` checks them against Monte-Carlo stationary noise (~1 %).
@@ -131,3 +132,15 @@ Notes on the method and its knobs:
   window (about 23 s records).
 * One epsilon is drawn per record, i.e. per site and per realization. Several sites of the same event are not correlated with each
   other by this tool (spatial correlation and the between-event component are out of scope).
+
+## 6. Azimuth / orientation of the horizontal components
+```
+python -m stochastic_gm.verification.verify_azimuth
+```
+Simulates a point source with a site at nine azimuths (0-315 deg) and rotates NS/EW with the true
+source-to-site azimuth (clockwise from north). Before the S arrival only P exists, so the
+tangential/radial rms ratio must be small (< 0.1; the ~0.05 residual is acausal spreading of S by the
+frequency-domain filtering); in an `sh_only` run the motion must lie on the tangential axis.
+The azimuth used to be the unsigned angle between north and the site-to-source vector (`acos`), which
+rotated the horizontals by 180 deg - 2 az for sites east of the source (axes swapped at 45 deg and
+135 deg); records before this fix have the radial/tangential mix mis-oriented at those sites.

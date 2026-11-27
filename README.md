@@ -289,6 +289,7 @@ python -m stochastic_gm.verification.verify_noise_scaled_spectra --n-sim 1000
 python -m stochastic_gm.verification.verify_rvt --n-sim 100
 python -m stochastic_gm.verification.verify_gmpe_ab06 --n-sim 60     # needs: pip install pygmm
 python -m stochastic_gm.verification.verify_finite_fault_postprocess --n-sim 800   # ~10 min
+python -m stochastic_gm.verification.verify_azimuth                                # ~10 s
 ```
 
 The first simulates many realizations, computes the Konno-Ohmachi smoothed EAS and
